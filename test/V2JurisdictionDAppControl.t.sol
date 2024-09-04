@@ -15,11 +15,12 @@ import { UserOperation } from "src/contracts/types/UserOperation.sol";
 import { DAppConfig } from "src/contracts/types/ConfigTypes.sol";
 import "src/contracts/types/DAppOperation.sol";
 
-import { V2RewardDAppControl } from "src/contracts/examples/v2-example-router/V2RewardDAppControl.sol";
+import { V2JurisdictionDAppControl } from "src/contracts/examples/jurisdiction-tags/V2JurisdictionDAppControl.sol";
 import { IUniswapV2Router01, IUniswapV2Router02 } from "src/contracts/examples/v2-example-router/interfaces/IUniswapV2Router.sol";
+import { IUniswapV2Factory } from "src/contracts/examples/jurisdiction-tags/interfaces/IUniswapV2Factory.sol";
 import { SolverBase } from "src/contracts/solver/SolverBase.sol";
 
-contract V2RewardDAppControlTest is BaseTest {
+contract V2JurisdictionDAppControlTest is BaseTest {
 
     struct Sig {
         uint8 v;
@@ -31,7 +32,7 @@ contract V2RewardDAppControlTest is BaseTest {
     address DAI_ADDRESS = address(DAI);
     address V2_ROUTER = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
 
-    V2RewardDAppControl v2RewardControl;
+    V2JurisdictionDAppControl jurisdictionDApp;
     TxBuilder txBuilder;
     Sig sig;
 
@@ -41,38 +42,58 @@ contract V2RewardDAppControlTest is BaseTest {
         super.setUp();
 
         vm.startPrank(governanceEOA);
-        v2RewardControl = new V2RewardDAppControl(address(atlas), WETH_ADDRESS, V2_ROUTER);
-        atlasVerification.initializeGovernance(address(v2RewardControl));
+        jurisdictionDApp = new V2JurisdictionDAppControl(
+            address(atlas),
+            WETH_ADDRESS,
+            V2_ROUTER,
+            "United States of America",
+            "USA",
+            true,
+            false,
+            false
+        );
+        atlasVerification.initializeGovernance(address(jurisdictionDApp));
         vm.stopPrank();
 
         txBuilder = new TxBuilder({
-            _control: address(v2RewardControl),
+            _control: address(jurisdictionDApp),
             _atlas: address(atlas),
             _verification: address(atlasVerification)
         });
     }
 
-    // Swap 1 WETH for 1830 DAI
-    function test_V2RewardDApp_swapWETHForDAI() public {
-        // FIXME: fix before merging spearbit-reaudit branch
-        // vm.skip(true);
-        // This whole test will get redone in the gas accounting update
+    function test_TaggingExecutionEnvironment() public {
+        // Ensure that the execution environment is tagged when it's created
+        vm.startPrank(userEOA);
+        address executionEnvironment = atlas.createExecutionEnvironment(userEOA, address(jurisdictionDApp));
+        console.log("atlas: ", address(atlas));
+        console.log("execution environment: ", address(executionEnvironment));
+        console.log("dapp: ", address(jurisdictionDApp));
+        console.log("user: ", userEOA);
+        console.log("gov: ", governanceEOA);
+        vm.stopPrank();
+
+        vm.startPrank(address(jurisdictionDApp));
+
+        //need to tag every user once they make their EE
+        jurisdictionDApp.tag(address(executionEnvironment));
+
+        // Retrieve the factory address from the Uniswap V2 Router
+        address factoryAddress = IUniswapV2Router02(V2_ROUTER).factory();
+
+        // Get the pair address for WETH and DAI
+        address pairAddress = IUniswapV2Factory(factoryAddress).getPair(WETH_ADDRESS, DAI_ADDRESS);
         
+        // Tag this pool as ok to use
+        jurisdictionDApp.tag(address(pairAddress));
+
+        vm.stopPrank();
+
         UserOperation memory userOp;
         SolverOperation[] memory solverOps = new SolverOperation[](1);
         DAppOperation memory dAppOp;
 
         // USER STUFF
-
-        vm.startPrank(userEOA);
-        address executionEnvironment = atlas.createExecutionEnvironment(userEOA, address(v2RewardControl));
-        console.log("Execution Environment:", executionEnvironment);
-        console.log("Atlas:", address(atlas));
-        console.log("DappControl:", address(v2RewardControl));
-        console.log("user EOA:", address(userEOA));
-        vm.stopPrank();
-        vm.label(address(executionEnvironment), "EXECUTION ENV");
-
         address[] memory path = new address[](2);
         path[0] = WETH_ADDRESS;
         path[1] = DAI_ADDRESS;
@@ -86,7 +107,7 @@ contract V2RewardDAppControlTest is BaseTest {
 
         userOp = txBuilder.buildUserOperation({
             from: userEOA,
-            to: address(v2RewardControl),
+            to: address(jurisdictionDApp),
             maxFeePerGas: tx.gasprice + 1,
             value: 0,
             deadline: block.number + 555, // block deadline
@@ -107,18 +128,17 @@ contract V2RewardDAppControlTest is BaseTest {
         vm.stopPrank();
 
         // SOLVER STUFF - SOLVER NOT NEEDED IF BUNDLER (DAPP) PAYS GAS
-
         // vm.startPrank(solverOneEOA);
         // basicV2Solver = new BasicV2Solver(WETH_ADDRESS, address(atlas));
-        // atlas.deposit{ value: 1e18 }();
-        // atlas.bond(1e18);
+        // atlas.deposit{ value: 10e18 }();
+        // atlas.bond(10 ether);
         // vm.stopPrank();
 
         // bytes memory solverOpData = abi.encodeWithSelector(BasicV2Solver.backrun.selector);
         // solverOps[0] = txBuilder.buildSolverOperation({
         //     userOp: userOp,
         //     solverOpData: solverOpData,
-        //     solverEOA: solverOneEOA,
+        //     solver: solverOneEOA,
         //     solverContract: address(basicV2Solver),
         //     bidAmount: 1e17, // 0.1 ETH
         //     value: 0
@@ -131,24 +151,27 @@ contract V2RewardDAppControlTest is BaseTest {
         dAppOp = txBuilder.buildDAppOperation(governanceEOA, userOp, solverOps);
 
         // DApp Gov bonds AtlETH to pay gas in event of no solver
-        deal(governanceEOA, 2e18);
+        deal(governanceEOA, 20e18);
         vm.startPrank(governanceEOA);
-        atlas.deposit{ value: 1e18 }();
-        atlas.bond(1e18);
-        vm.stopPrank();
+        atlas.deposit{ value: 10e18 }();
+        atlas.bond(10e18);
+
 
         // METACALL STUFF
-
         console.log("\nBEFORE METACALL");
         console.log("User WETH balance", WETH.balanceOf(userEOA));
         console.log("User DAI balance", DAI.balanceOf(userEOA));
 
-        vm.prank(governanceEOA);
+        // vm.prank(governanceEOA);
         atlas.metacall({ userOp: userOp, solverOps: solverOps, dAppOp: dAppOp });
 
         console.log("\nAFTER METACALL");
         console.log("User WETH balance", WETH.balanceOf(userEOA));
         console.log("User DAI balance", DAI.balanceOf(userEOA));
+
+        // Verify that the execution environment is tagged
+        bool isTagged = jurisdictionDApp.isTagged(executionEnvironment);
+        assertTrue(isTagged, "Execution environment should be tagged with USA jurisdiction");
     }
 }
 

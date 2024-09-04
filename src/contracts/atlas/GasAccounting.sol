@@ -1,6 +1,8 @@
 //SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.25;
 
+import "forge-std/console.sol";
+
 import { SafeTransferLib } from "solady/utils/SafeTransferLib.sol";
 import { SafeCast } from "openzeppelin-contracts/contracts/utils/math/SafeCast.sol";
 import { SafetyLocks } from "src/contracts/atlas/SafetyLocks.sol";
@@ -330,24 +332,26 @@ abstract contract GasAccounting is SafetyLocks {
 
         // Estimate the unspent, remaining gas that the Solver will not be liable for.
         uint256 _gasRemainder = _gasLeft * tx.gasprice;
-
+        
         // Calculate the preadjusted netAtlasGasSurcharge
         netAtlasGasSurcharge = _fees - _gasRemainder.getAtlasSurcharge();
 
         adjustedClaims -= _gasRemainder.withBundlerSurcharge();
         adjustedWithdrawals += netAtlasGasSurcharge;
-        S_cumulativeSurcharge = _surcharge + netAtlasGasSurcharge; // Update the cumulative surcharge
+        S_cumulativeSurcharge = _surcharge + netAtlasGasSurcharge; // Update the cumulative surcharge     
 
         // Calculate whether or not the bundler used an excessive amount of gas and, if so, reduce their
         // gas rebate. By reducing the claims, solvers end up paying less in total.
         if (ctx.solverCount > 0) {
             // Calculate the unadjusted bundler gas surcharge
             uint256 _grossBundlerGasSurcharge = adjustedClaims.withoutBundlerSurcharge();
+            
 
             // Calculate an estimate for how much gas should be remaining
             // NOTE: There is a free buffer of one SolverOperation because solverIndex starts at 0.
             uint256 _upperGasRemainingEstimate =
                 (solverGasLimit * (ctx.solverCount - ctx.solverIndex)) + _BUNDLER_GAS_PENALTY_BUFFER;
+            
 
             // Increase the writeoffs value if the bundler set too high of a gas parameter and forced solvers to
             // maintain higher escrow balances.
@@ -412,7 +416,8 @@ abstract contract GasAccounting is SafetyLocks {
         }
 
         if (_amountSolverPays > _amountSolverReceives) {
-            if (!ctx.solverSuccessful) {
+            //do we need to add a check for solver != bundler?
+            if (!ctx.solverSuccessful && _winningSolver != ctx.bundler) {
                 revert InsufficientTotalBalance(_amountSolverPays - _amountSolverReceives);
             }
 

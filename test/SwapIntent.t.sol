@@ -65,6 +65,8 @@ contract SwapIntentTest is BaseTest {
             _verification: address(atlasVerification)
         });
 
+        // console.log(address(swapIntentControl));
+
         // Deposit ETH from Searcher signer to pay for searcher's gas
         // vm.prank(solverOneEOA);
         // atlas.deposit{value: 1e18}();

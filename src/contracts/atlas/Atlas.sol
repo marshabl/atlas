@@ -1,6 +1,8 @@
 //SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.25;
 
+import "forge-std/console.sol";
+
 import { SafeTransferLib } from "solady/utils/SafeTransferLib.sol";
 import { LibSort } from "solady/utils/LibSort.sol";
 
@@ -88,7 +90,9 @@ contract Atlas is Escrow, Factory {
         try this.execute(_dConfig, userOp, solverOps, _executionEnvironment, _bundler, dAppOp.userOpHash, _isSimulation)
         returns (Context memory ctx) {
             // Gas Refund to sender only if execution is successful
+            // console.log("HERE");
             (uint256 _ethPaidToBundler, uint256 _netGasSurcharge) = _settle(ctx, _dConfig.solverGasLimit);
+            // console.log("HERE");
 
             auctionWon = ctx.solverSuccessful;
             emit MetacallResult(

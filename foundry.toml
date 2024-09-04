@@ -5,11 +5,12 @@
   block_gas_limit = 300000000
   gas_limit = 3000000000
   gas_price = 1500000000
-  solc_version = "0.8.25"
+  solc_version = "0.8.25"  # Default version for most contracts
   evm_version = "cancun"
   isolate = false
   gas_reports = ["Atlas", "AtlasVerification", "Simulator", "Sorter", "ExecutionEnvironment"]
   fs_permissions = [{ access = "read-write", path = "./"}]
+  
 
 [profile.ci]
   fuzz = { runs = 10_000 }
@@ -25,3 +26,4 @@
   tab_width = 4
   wrap_comments = true
   ignore = ["./**/*.t.sol"]
+

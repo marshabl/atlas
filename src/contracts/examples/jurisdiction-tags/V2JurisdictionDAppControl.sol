@@ -1,6 +1,8 @@
 //SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.25;
 
+import "forge-std/console.sol";
+
 // Base Imports
 import { SafeTransferLib } from "solady/utils/SafeTransferLib.sol";
 import { IERC20 } from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
@@ -13,6 +15,10 @@ import "src/contracts/types/SolverOperation.sol";
 
 // Uniswap Imports
 import { IUniswapV2Router01, IUniswapV2Router02 } from "./interfaces/IUniswapV2Router.sol";
+import { IUniswapV2Factory } from "./interfaces/IUniswapV2Factory.sol";
+
+//Tags
+import "./Tags.sol";
 
 /*
 * @title V2RewardDAppControl
@@ -24,7 +30,7 @@ import { IUniswapV2Router01, IUniswapV2Router02 } from "./interfaces/IUniswapV2R
 * @notice The reward token can be ETH (address(0)) or any ERC20 token. Solvers are required to pay their bid with that
     token. 
 */
-contract V2RewardDAppControl is DAppControl {
+contract V2JurisdictionDAppControl is DAppControl, Tags {
     address public immutable REWARD_TOKEN;
     address public immutable uniswapV2Router02;
 
@@ -37,7 +43,13 @@ contract V2RewardDAppControl is DAppControl {
     constructor(
         address _atlas,
         address _rewardToken,
-        address _uniswapV2Router02
+        address _uniswapV2Router02,
+        string memory _tagName,
+        string memory _tagSymbol,
+        bool _revokable,
+        bool _transferable,
+        // address _owner,
+        bool _allowFeeOnTransferTokens
     )
         DAppControl(
             _atlas,
@@ -66,6 +78,8 @@ contract V2RewardDAppControl is DAppControl {
                 allowAllocateValueFailure: false
             })
         )
+
+        Tags(_tagName, _tagSymbol, _revokable, _transferable, address(this)) // Initializing Tags contract
     {
         REWARD_TOKEN = _rewardToken;
         uniswapV2Router02 = _uniswapV2Router02;
@@ -75,35 +89,36 @@ contract V2RewardDAppControl is DAppControl {
         ERC20StartingSelectors[bytes4(IUniswapV2Router01.swapTokensForExactETH.selector)] = true;
         ERC20StartingSelectors[bytes4(IUniswapV2Router01.swapExactTokensForETH.selector)] = true;
         ERC20StartingSelectors[bytes4(IUniswapV2Router02.swapExactTokensForTokensSupportingFeeOnTransferTokens.selector)]
-        = true;
+        = _allowFeeOnTransferTokens;
         ERC20StartingSelectors[bytes4(IUniswapV2Router02.swapExactTokensForETHSupportingFeeOnTransferTokens.selector)] =
-            true;
+            _allowFeeOnTransferTokens;
 
         ETHStartingSelectors[bytes4(IUniswapV2Router01.swapExactETHForTokens.selector)] = true;
         ETHStartingSelectors[bytes4(IUniswapV2Router01.swapETHForExactTokens.selector)] = true;
         ETHStartingSelectors[bytes4(IUniswapV2Router02.swapExactETHForTokensSupportingFeeOnTransferTokens.selector)] =
-            true;
+            _allowFeeOnTransferTokens;
 
         exactINSelectors[bytes4(IUniswapV2Router01.swapExactTokensForTokens.selector)] = true;
         exactINSelectors[bytes4(IUniswapV2Router01.swapExactTokensForETH.selector)] = true;
         exactINSelectors[bytes4(IUniswapV2Router02.swapExactTokensForTokensSupportingFeeOnTransferTokens.selector)] =
-            true;
-        exactINSelectors[bytes4(IUniswapV2Router02.swapExactTokensForETHSupportingFeeOnTransferTokens.selector)] = true;
+            _allowFeeOnTransferTokens;
+        exactINSelectors[bytes4(IUniswapV2Router02.swapExactTokensForETHSupportingFeeOnTransferTokens.selector)] = _allowFeeOnTransferTokens;
         exactINSelectors[bytes4(IUniswapV2Router01.swapExactETHForTokens.selector)] = true;
-        exactINSelectors[bytes4(IUniswapV2Router02.swapExactETHForTokensSupportingFeeOnTransferTokens.selector)] = true;
+        exactINSelectors[bytes4(IUniswapV2Router02.swapExactETHForTokensSupportingFeeOnTransferTokens.selector)] = _allowFeeOnTransferTokens; 
     }
 
     // ---------------------------------------------------- //
     //                       Custom                         //
     // ---------------------------------------------------- //
 
-    /*
-    * @notice This function inspects the user's call data to determine the token they are selling and the amount sold
-    * @param userData The user's call data
-    * @return tokenSold The address of the ERC20 token the user is selling (or address(0) for ETH)
-    * @return amountSold The amount of the token sold
+    /**
+    * @notice This function inspects the user's call data to determine the tokens involved in the swap and the amount sold.
+    * @param userData The user's call data.
+    * @return tokenSold The address of the ERC20 token the user is selling (or address(0) for ETH).
+    * @return tokenBought The address of the ERC20 token the user is buying.
+    * @return amountSold The amount of the token sold.
     */
-    function getTokenSold(bytes calldata userData) external view returns (address tokenSold, uint256 amountSold) {
+    function getSwapDetails(bytes calldata userData) external view returns (address tokenSold, address tokenBought, uint256 amountSold) {
         bytes4 funcSelector = bytes4(userData);
 
         // User is only allowed to call swap functions
@@ -112,7 +127,7 @@ contract V2RewardDAppControl is DAppControl {
             "V2RewardDAppControl: InvalidFunction"
         );
 
-        if (ERC20StartingSelectors[funcSelector]) {
+        if (ERC20StartingSelectors[funcSelector] || ETHStartingSelectors[funcSelector]) {
             address[] memory path;
 
             if (exactINSelectors[funcSelector]) {
@@ -123,7 +138,10 @@ contract V2RewardDAppControl is DAppControl {
                 (, amountSold, path,,) = abi.decode(userData[4:], (uint256, uint256, address[], address, uint256));
             }
 
+            // Set tokenSold and tokenBought based on the path
+            require(path.length >= 2, "V2RewardDAppControl: Invalid swap path");
             tokenSold = path[0];
+            tokenBought = path[1];
         }
     }
 
@@ -131,6 +149,11 @@ contract V2RewardDAppControl is DAppControl {
     //                     Atlas hooks                      //
     // ---------------------------------------------------- //
 
+    /*
+    * @notice This function checks the user operation and ensures that the user (execution environment)
+    * is tagged with the JurisdictionTag. If the user is not tagged, tag them.
+    * @param userOp The UserOperation struct containing the user's transaction data.
+    */
     function _checkUserOperation(UserOperation memory userOp) internal view override {
         // User is only allowed to call UniswapV2Router02
         require(userOp.dapp == uniswapV2Router02, "V2RewardDAppControl: InvalidDestination");
@@ -146,8 +169,17 @@ contract V2RewardDAppControl is DAppControl {
         _postOpsCall hook to refund leftover dust, if any
     */
     function _preOpsCall(UserOperation calldata userOp) internal override returns (bytes memory) {
+        // Check if the user (execution environment) is tagged with JurisdictionTag
+        require(V2JurisdictionDAppControl(userOp.control).isTagged(address(this)), "V2JurisdictionDAppControl: user (execution environment) must get tagged first");
+
         // The current hook is delegatecalled, so we need to call the userOp.control to access the mappings
-        (address tokenSold, uint256 amountSold) = V2RewardDAppControl(userOp.control).getTokenSold(userOp.data);
+        (address tokenSold, address tokenBought, uint256 amountSold) = V2JurisdictionDAppControl(userOp.control).getSwapDetails(userOp.data);
+
+        // Get the Uniswap V2 Pair address for the tokens being sold and bought
+        address pair = IUniswapV2Factory(IUniswapV2Router02(uniswapV2Router02).factory()).getPair(tokenSold, tokenBought);
+
+        // Check that the Uniswap V2 Pair is tagged with JurisdictionTag
+        require(V2JurisdictionDAppControl(userOp.control).isTagged(pair), "V2JurisdictionDAppControl: Uniswap V2 pair is not tagged with correct jurisdiction");
 
         // Pull the tokens from the user and approve UniswapV2Router02 to spend them
         _getAndApproveUserERC20(tokenSold, amountSold, uniswapV2Router02);
