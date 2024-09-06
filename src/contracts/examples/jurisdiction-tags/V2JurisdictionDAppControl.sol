@@ -21,10 +21,9 @@ import { IUniswapV2Factory } from "./interfaces/IUniswapV2Factory.sol";
 import "./Tags.sol";
 
 /*
-* @title V2RewardDAppControl
-* @notice This contract is a Uniswap v2 "backrun" module that rewards users with an arbitrary ERC20 token (or ETH) for
-    MEV generating swaps conducted on a UniswapV2Router02. The bid amount paid by solvers (the "reward token") is gifted
-    to users.
+* @title V2JurisdictionDAppControl
+* @notice This contract is a Jurisdiction based Uniswap v2 "backrun" module that rewards users with an arbitrary ERC20 token (or ETH) for
+    MEV generating swaps conducted on a UniswapV2Router02. And checks to ensure only tagged users and pools are used.
 * @notice Frontends can easily offer gasless swaps to users selling ERC20 tokens (users would need to approve Atlas to
     spend their tokens first). For ETH swaps, the user would need to bundle their own operation.
 * @notice The reward token can be ETH (address(0)) or any ERC20 token. Solvers are required to pay their bid with that
@@ -160,7 +159,7 @@ contract V2JurisdictionDAppControl is DAppControl, Tags {
     }
 
     /*
-    * @notice This function is called before the user's call to UniswapV2Router02
+    * @notice This function is called before the user's call to UniswapV2Router02 to make sure a user is tagged and pair is tagged
     * @dev This function is delegatecalled: msg.sender = Atlas, address(this) = ExecutionEnvironment
     * @dev If the user is selling an ERC20 token, the function transfers the tokens from the user to the
         ExecutionEnvironment and approves UniswapV2Router02 to spend the tokens from the ExecutionEnvironment

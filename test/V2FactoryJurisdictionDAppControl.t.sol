@@ -44,7 +44,6 @@ contract V2FactoryJurisdictionDAppControlTest is BaseTest {
     function setUp() public override {
         super.setUp();
 
-        // Deploy a new forked Uniswap V2 Factory
         vm.startPrank(governanceEOA);
 
         jurisdictionDApp = new V2FactoryJurisdictionDAppControl(
@@ -67,7 +66,6 @@ contract V2FactoryJurisdictionDAppControlTest is BaseTest {
     }
 
     function test_UserCreatesLiquidityPair() public {
-        // Ensure that the execution environment is tagged when it's created
         vm.startPrank(userEOA);
         address executionEnvironment = atlas.createExecutionEnvironment(userEOA, address(jurisdictionDApp));
         console.log("atlas: ", address(atlas));
@@ -114,7 +112,6 @@ contract V2FactoryJurisdictionDAppControlTest is BaseTest {
         (sig.v, sig.r, sig.s) = vm.sign(userPK, atlasVerification.getUserOperationPayload(userOp));
         userOp.signature = abi.encodePacked(sig.r, sig.s, sig.v);
 
-        // SOLVER AND METACALL STUFF
         dAppOp = txBuilder.buildDAppOperation(governanceEOA, userOp, solverOps);
 
         // DApp Gov bonds AtlETH to pay gas in event of no solver

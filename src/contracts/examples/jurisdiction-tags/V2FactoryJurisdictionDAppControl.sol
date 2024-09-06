@@ -21,9 +21,9 @@ import { IUniswapV2Pair } from "./interfaces/IUniswapV2Pair.sol";
 import "./Tags.sol";
 
 /*
-* @title V2JurisdictionDAppControlFactory
-* @notice This contract manages liquidity pairs using the Uniswap V2 Factory. It works with Atlas for MEV-related operations.
-* @notice The contract interacts with the Uniswap V2 Factory to manage liquidity pairs, tag operations, and bid rewards.
+* @title V2FactoryJurisdictionDAppControl
+* @notice This contract manages liquidity pairs using the Uniswap V2 Factory. 
+* @notice The contract interacts with the Uniswap V2 Factory to manage liquidity pairs, check tags, and bid rewards.
 */
 contract V2FactoryJurisdictionDAppControl is DAppControl, Tags {
     address public immutable REWARD_TOKEN;

@@ -90,7 +90,7 @@ contract V2JurisdictionDAppControlTest is BaseTest {
         vm.stopPrank();
 
         UserOperation memory userOp;
-        SolverOperation[] memory solverOps = new SolverOperation[](1);
+        SolverOperation[] memory solverOps = new SolverOperation[](0);
         DAppOperation memory dAppOp;
 
         // USER STUFF
