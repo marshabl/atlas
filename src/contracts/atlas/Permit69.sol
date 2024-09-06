@@ -1,6 +1,8 @@
 //SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.25;
 
+import "forge-std/console.sol";
+
 import { SafeTransferLib } from "solady/utils/SafeTransferLib.sol";
 import { IERC20 } from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import { GasAccounting } from "src/contracts/atlas/GasAccounting.sol";
@@ -106,6 +108,8 @@ abstract contract Permit69 is GasAccounting {
     /// @param safeExecutionPhaseSet The set of safe execution phases.
     function _validateTransfer(address user, address control, uint8 safeExecutionPhaseSet) internal {
         (address _activeEnv, uint32 _callConfig, uint8 _currentPhase) = _lock();
+
+        console.log("validate transfer msg.sender is: ", msg.sender);
 
         // Verify that the ExecutionEnvironment's context is correct.
         if (_activeEnv != msg.sender) {

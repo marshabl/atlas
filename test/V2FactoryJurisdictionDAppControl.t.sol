@@ -15,10 +15,10 @@ import { UserOperation } from "src/contracts/types/UserOperation.sol";
 import { DAppConfig } from "src/contracts/types/ConfigTypes.sol";
 import "src/contracts/types/DAppOperation.sol";
 
-import { V2JurisdictionDAppControlFactory } from "src/contracts/examples/jurisdiction-tags/V2FactoryJurisdictionDAppControl.sol";
+import { V2FactoryJurisdictionDAppControl } from "src/contracts/examples/jurisdiction-tags/V2FactoryJurisdictionDAppControl.sol";
 import { IUniswapV2Router01, IUniswapV2Router02 } from "src/contracts/examples/v2-example-router/interfaces/IUniswapV2Router.sol";
 import { IUniswapV2Factory } from "src/contracts/examples/jurisdiction-tags/interfaces/IUniswapV2Factory.sol";
-import { UniswapV2Factory } from '@uniswap/v2-core/contracts/contracts/UniswapV2Factory.sol';
+
 import { SolverBase } from "src/contracts/solver/SolverBase.sol";
 
 contract V2FactoryJurisdictionDAppControlTest is BaseTest {
@@ -30,11 +30,12 @@ contract V2FactoryJurisdictionDAppControlTest is BaseTest {
     }
 
     IERC20 DAI = IERC20(0x6B175474E89094C44Da98b954EedeAC495271d0F);
+    IERC20 DONG = IERC20(0x3709A4C208768A344A06ddDbeD7209076B2D814B);
     address DAI_ADDRESS = address(DAI);
-    // address V2_FACTORY = 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f; // Uniswap V2 factory address
-    address factoryForkAddress;
+    address DONG_ADDRESS = address(DONG);
+    address V2_FACTORY = 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f; // Uniswap V2 factory address
 
-    V2JurisdictionDAppControlFactory jurisdictionDApp;
+    V2FactoryJurisdictionDAppControl jurisdictionDApp;
     TxBuilder txBuilder;
     Sig sig;
 
@@ -45,13 +46,11 @@ contract V2FactoryJurisdictionDAppControlTest is BaseTest {
 
         // Deploy a new forked Uniswap V2 Factory
         vm.startPrank(governanceEOA);
-        UniswapV2Factory uniswapFactoryFork = new UniswapV2Factory(governanceEOA);  // Deploying the factory fork
-        factoryForkAddress = address(uniswapFactoryFork);  // Save the factory address
 
-        jurisdictionDApp = new V2JurisdictionDAppControlFactory(
+        jurisdictionDApp = new V2FactoryJurisdictionDAppControl(
             address(atlas),
             WETH_ADDRESS,
-            factoryForkAddress,
+            V2_FACTORY,
             "United States of America",
             "USA",
             true,
@@ -84,13 +83,7 @@ contract V2FactoryJurisdictionDAppControlTest is BaseTest {
         jurisdictionDApp.tag(address(executionEnvironment));
 
         // Retrieve the factory address
-        address factoryAddress = factoryForkAddress;
-
-        // Get or create a liquidity pair for WETH and DAI using the factory
-        address pairAddress = IUniswapV2Factory(factoryAddress).createPair(WETH_ADDRESS, DAI_ADDRESS);
-        
-        // Tag this pool as okay to use
-        jurisdictionDApp.tag(address(pairAddress));
+        address factoryAddress = V2_FACTORY;
 
         vm.stopPrank();
 
@@ -100,7 +93,7 @@ contract V2FactoryJurisdictionDAppControlTest is BaseTest {
 
         // USER OPERATION FOR PAIR CREATION
         bytes memory userOpData = abi.encodeCall(IUniswapV2Factory.createPair, (
-            WETH_ADDRESS,
+            DONG_ADDRESS,
             DAI_ADDRESS
         ));
 
@@ -114,41 +107,45 @@ contract V2FactoryJurisdictionDAppControlTest is BaseTest {
         });
 
         // Assign factory as the destination for the user operation
-        userOp.dapp = factoryForkAddress;
+        userOp.dapp = V2_FACTORY;
         userOp.sessionKey = governanceEOA;
 
         // User signs UserOperation data
         (sig.v, sig.r, sig.s) = vm.sign(userPK, atlasVerification.getUserOperationPayload(userOp));
         userOp.signature = abi.encodePacked(sig.r, sig.s, sig.v);
 
-        vm.startPrank(userEOA);
-        WETH.transfer(address(1), WETH.balanceOf(userEOA) - 2e18); // Burn WETH to make logs readable
-        WETH.approve(address(atlas), 1e18); // approve Atlas to take WETH for swap
-        vm.stopPrank();
-
         // SOLVER AND METACALL STUFF
         dAppOp = txBuilder.buildDAppOperation(governanceEOA, userOp, solverOps);
 
         // DApp Gov bonds AtlETH to pay gas in event of no solver
-        deal(governanceEOA, 20e18);
+        deal(governanceEOA, 2e18);
         vm.startPrank(governanceEOA);
-        atlas.deposit{ value: 10e18 }();
-        atlas.bond(10e18);
+        atlas.deposit{ value: 1e18 }();
+        atlas.bond(1e18);
+
+        address pairAddressBefore = IUniswapV2Factory(factoryAddress).getPair(DONG_ADDRESS, DAI_ADDRESS);
 
         console.log("\nBEFORE METACALL");
-        console.log("User WETH balance", WETH.balanceOf(userEOA));
-        console.log("User DAI balance", DAI.balanceOf(userEOA));
+        console.log("PairAddress before metacall", pairAddressBefore);
 
         atlas.metacall({ userOp: userOp, solverOps: solverOps, dAppOp: dAppOp });
 
+        address pairAddressAfter = IUniswapV2Factory(factoryAddress).getPair(DONG_ADDRESS, DAI_ADDRESS);
+
         console.log("\nAFTER METACALL");
-        console.log("User WETH balance", WETH.balanceOf(userEOA));
-        console.log("User DAI balance", DAI.balanceOf(userEOA));
+        console.log("PairAddress after metacall", pairAddressAfter);
+
+        vm.startPrank(address(jurisdictionDApp));
+
+        // Tag this pool as okay to use
+        jurisdictionDApp.tag(address(pairAddressAfter));
 
         // Verify that the pair was created and tagged
-        assertTrue(jurisdictionDApp.isTagged(pairAddress), "Pair should be tagged with USA jurisdiction");
+        assertTrue(jurisdictionDApp.isTagged(pairAddressAfter), "Pair should be tagged with USA jurisdiction");
     }
 }
+
+
 
 contract BasicV2Solver is SolverBase {
     constructor(address weth, address atlas) SolverBase(weth, atlas, msg.sender) { }

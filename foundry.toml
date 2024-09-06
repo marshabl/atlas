@@ -10,6 +10,9 @@
   isolate = false
   gas_reports = ["Atlas", "AtlasVerification", "Simulator", "Sorter", "ExecutionEnvironment"]
   fs_permissions = [{ access = "read-write", path = "./"}]
+
+[profile.default.overrides]
+  "lib/v2-core/**" = "0.5.16"
   
 
 [profile.ci]

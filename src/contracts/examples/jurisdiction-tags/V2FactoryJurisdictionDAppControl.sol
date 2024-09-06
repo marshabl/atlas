@@ -25,13 +25,12 @@ import "./Tags.sol";
 * @notice This contract manages liquidity pairs using the Uniswap V2 Factory. It works with Atlas for MEV-related operations.
 * @notice The contract interacts with the Uniswap V2 Factory to manage liquidity pairs, tag operations, and bid rewards.
 */
-contract V2JurisdictionDAppControlFactory is DAppControl, Tags {
+contract V2FactoryJurisdictionDAppControl is DAppControl, Tags {
     address public immutable REWARD_TOKEN;
     address public immutable uniswapV2Factory;
 
     mapping(bytes4 => bool) public pairCreationSelectors;
 
-    event LiquidityPairCreated(address indexed token0, address indexed token1, address pair);
     event TokensRewarded(address indexed user, address indexed token, uint256 amount);
 
     constructor(
@@ -94,13 +93,13 @@ contract V2JurisdictionDAppControlFactory is DAppControl, Tags {
         // User is only allowed to call createPair function
         require(
             pairCreationSelectors[funcSelector],
-            "V2JurisdictionDAppControlFactory: InvalidFunction"
+            "V2FactoryJurisdictionDAppControl: InvalidFunction"
         );
 
         // Decode the user data to extract token addresses
         (token0, token1) = abi.decode(userData[4:], (address, address));
 
-        require(token0 != address(0) && token1 != address(0), "V2JurisdictionDAppControlFactory: Invalid tokens");
+        require(token0 != address(0) && token1 != address(0), "V2FactoryJurisdictionDAppControl: Invalid tokens");
     }
 
     // ---------------------------------------------------- //
@@ -114,7 +113,7 @@ contract V2JurisdictionDAppControlFactory is DAppControl, Tags {
     */
     function _checkUserOperation(UserOperation memory userOp) internal view override {
         // User is only allowed to call UniswapV2Factory
-        require(userOp.dapp == uniswapV2Factory, "V2JurisdictionDAppControlFactory: InvalidDestination");
+        require(userOp.dapp == uniswapV2Factory, "V2FactoryJurisdictionDAppControl: InvalidDestination");
     }
 
     /*
@@ -126,19 +125,13 @@ contract V2JurisdictionDAppControlFactory is DAppControl, Tags {
     */
     function _preOpsCall(UserOperation calldata userOp) internal override returns (bytes memory) {
         // Check if the user (execution environment) is tagged with JurisdictionTag
-        require(V2JurisdictionDAppControlFactory(userOp.control).isTagged(address(this)), "V2JurisdictionDAppControlFactory: user must get tagged first");
+        require(V2FactoryJurisdictionDAppControl(userOp.control).isTagged(address(this)), "V2FactoryJurisdictionDAppControl: user must get tagged first");
 
         // Extract the pair details
-        (address token0, address token1) = V2JurisdictionDAppControlFactory(userOp.control).getPairDetails(userOp.data);
+        (address token0, address token1) = V2FactoryJurisdictionDAppControl(userOp.control).getPairDetails(userOp.data);
 
-        // Create the pair
-        address pair = IUniswapV2Factory(uniswapV2Factory).createPair(token0, token1);
-
-        // Check that the pair is tagged with JurisdictionTag
-        require(V2JurisdictionDAppControlFactory(userOp.control).isTagged(pair), "V2JurisdictionDAppControlFactory: Uniswap V2 pair is not tagged with correct jurisdiction");
-
-        // Return the pair for any future hooks
-        return abi.encode(pair);
+        // Return the tokens used in createPair for any future hooks
+        return abi.encode(token0, token1);
     }
 
     /*
@@ -167,27 +160,15 @@ contract V2JurisdictionDAppControlFactory is DAppControl, Tags {
     /*
     * @notice This function is called as the last phase of a `metacall` transaction
     * @dev This function is delegatecalled: msg.sender = Atlas, address(this) = ExecutionEnvironment
-    * @dev It refunds any leftover dust (ETH/ERC20) to the user (this can occur when the user is calling an exactOUT
-        function and the amount sold is less than the amountInMax)
-    * @param data The address of the ERC20 token the user is selling (or address(0) for ETH), that was returned by the
-        _preOpsCall hook
+    * @dev It ensures that a pair was actually created
+    * @param data The addresses of the two ERC20 tokens
     */
     function _postOpsCall(bool, bytes calldata data) internal override {
-        address token = abi.decode(data, (address));
-        uint256 balance;
+        (address token0, address token1) = abi.decode(data, (address, address));
 
-        // Refund ETH/ERC20 dust if any
-        if (token == address(0)) {
-            balance = address(this).balance;
-            if (balance > 0) {
-                SafeTransferLib.safeTransferETH(_user(), balance);
-            }
-        } else {
-            balance = IERC20(token).balanceOf(address(this));
-            if (balance > 0) {
-                SafeTransferLib.safeTransfer(token, _user(), balance);
-            }
-        }
+        address pairAddress = IUniswapV2Factory(uniswapV2Factory).getPair(token0, token1);
+        
+        require(pairAddress != address(0), "V2FactoryJurisdictionDAppControl: Failed to create a new pair");
     }
 
     // ---------------------------------------------------- //
